@@ -9,6 +9,23 @@ var config = {
     database: 'hackathon_danone'
 };
 
+async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input, label) {
+    let walec = await runQuery(`SELECT TOP 1000  *, CAST(CONVERT(datetime,walec08.timestamp) as float) as time from recipe_0_orders_details
+       JOIN "Walec DD08" walec08 ON walec08.timestamp between recipe_0_orders_details.activation_date  AND recipe_0_orders_details.closing_date
+       where id = ${orderId}`);
+
+    for (let row of walec.recordset) {
+        row.bigbag = findNearest(bigbag.recordset, row.time)
+        row.dd = findNearest(dd.recordset, row.time)
+        row.slurry = findNearest(slurry.recordset, row.time)
+        row.outSemi = findNearest(outSemi.recordset, row.time)
+        row.outTest = findNearest(outTest.recordset, row.time)
+
+        input.push([row.steam_pressure_at_the_inlet_of_regulation_unit, row.product_temperature_at_the_outlet_of_JetCooker]);
+        label.push([row.outSemi.efficiency, row.outTest.moisture, row.outTest.bulk_density]);
+    }
+}
+
 // connect to your database
 sql.connect(config, async function (err) {
 const orderId=1;
@@ -16,9 +33,7 @@ const orderId=1;
 
     // create Request object
 
-   let walec=await runQuery(`SELECT TOP 1000  *, CAST(CONVERT(datetime,walec08.timestamp) as float) as time from recipe_0_orders_details
-       JOIN "Walec DD08" walec08 ON walec08.timestamp between recipe_0_orders_details.activation_date  AND recipe_0_orders_details.closing_date
-       where id = ${orderId} AND recipe_0_orders_details.data_split = 'training'`);
+
    // let raw_material = await runQuery(`select *
    //     from recipe_0_raw_material_in raw_in
    //     join recipe_0_raw_material_used  raw_used ON raw_used.process_order_sap3 = raw_in.process_order_sap3 AND raw_used.id=raw_in.id
@@ -31,25 +46,25 @@ const orderId=1;
 
     let input=[];
     let label=[];
-
-    for(let row of walec.recordset){
-        row.bigbag=findNearest(bigbag.recordset,  row.time)
-        row.dd=findNearest(dd.recordset,  row.time)
-        row.slurry=findNearest(slurry.recordset,  row.time)
-        row.outSemi=findNearest(outSemi.recordset,  row.time)
-        row.outTest=findNearest(outTest.recordset,  row.time)
-
-        input.push([row.steam_pressure_at_the_inlet_of_regulation_unit, row.product_temperature_at_the_outlet_of_JetCooker]);
-        label.push([row.outSemi.efficiency, row.outTest.moisture, row.outTest.bulk_density]);
+    let orders=await runQuery("SELECT TOP 5 * from recipe_0_orders_details WHERE data_split = 'training'");
+    for(let order of orders.recordset) {
+        await fillWithData(order.id, bigbag, dd, slurry, outSemi, outTest, input, label);
     }
 let tensor=convertToTensor(input, label);
     let model=createModel();
    let trainResult= await trainModel(model, tensor.inputs, tensor.labels);
     console.log('Done Training');
-
-    testModel(model, input, label, tensor);
+    let ordersTest=await runQuery("SELECT * from recipe_0_orders_details WHERE data_split = 'test'");
+    let inputTest=[];
+    let labelTest=[];
+    for(let order of ordersTest.recordset) {
+        await fillWithData(order.id, bigbag, dd, slurry, outSemi, outTest, inputTest, labelTest);
+    }
+    testModel(model, inputTest, labelTest, tensor);
    console.log(tensor);
 });
+
+
 function findNearest(data, value){
     let result=null;
     let distance=Number.POSITIVE_INFINITY;
@@ -125,7 +140,7 @@ async function trainModel(model, inputs, labels) {
     });
 
     const batchSize = 28;
-    const epochs = 50;
+    const epochs = 2;
 
     return await model.fit(inputs, labels, {
         batchSize,
