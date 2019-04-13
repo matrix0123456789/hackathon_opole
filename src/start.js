@@ -87,7 +87,7 @@ sql.connect(config, async function (err) {
     let inputTest = [];
     let labelTest = [];
     for (let order of ordersTest.recordset) {
-               await fillWithData(order.id, dd, slurry, outSemi, outTest, inputTest, labelTest);
+               await fillWithData(order.id, inputTest, labelTest);
     }
     testModel(model, inputTest, labelTest, tensor);
     // console.log(tensor);
