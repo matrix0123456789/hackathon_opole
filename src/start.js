@@ -56,7 +56,8 @@ async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input
 // connect to your database
 sql.connect(config, async function (err) {
     if (err) console.log(err);
-
+    calculateResults([],[]);
+    return;
     // create Request object
 
 
@@ -254,4 +255,17 @@ function testModel(model, inputs, labels, normalizationData) {
     let accuracy = tf.metrics.categoricalAccuracy(tf.tensor1d(efficiencyInput), tf.tensor1d(efficiencyPreds)).dataSync()[0];
 
     console.log({rootMeanSquaredError, rSquaredValue, accuracy});
+}
+function calculateResults(oryginal, preds){
+    let spawn = require('child_process').spawn;
+    let dataString='';
+    let s=spawn('python', ['./count.py']);
+    s.stdout.on('data', data=>{
+        dataString+=data.toString();
+    })
+    s.stdout.on('end', ()=>{
+        console.log(+dataString+2)
+    })
+    s.stdin.write(JSON.stringify({oryginal,preds}))
+
 }
