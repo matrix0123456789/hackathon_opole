@@ -163,7 +163,8 @@ function createModel() {
 
     model.add(tf.layers.dense({inputShape: [17], units: 17, useBias: true}));
 
-    model.add(tf.layers.dense({units: 30, useBias: true}));
+    model.add(tf.layers.dense({units: 120, useBias: true}));
+    model.add(tf.layers.dense({units: 50, useBias: true}));
     model.add(tf.layers.dense({units: 30, useBias: true}));
 
     model.add(tf.layers.dense({units: 3, useBias: true}));
@@ -174,13 +175,13 @@ function createModel() {
 async function trainModel(model, inputs, labels) {
     // Prepare the model for training.
     model.compile({
-        optimizer: tf.train.adam(),
+        optimizer: tf.train.adam(0.000001),
         loss: tf.losses.meanSquaredError,
         metrics: ['mse'],
     });
 
-    const batchSize = 128;
-    const epochs = 10;
+    const batchSize = 32;
+    const epochs = 100;
 
     return await model.fit(inputs, labels, {
         batchSize,
