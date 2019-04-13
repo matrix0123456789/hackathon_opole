@@ -29,10 +29,9 @@ async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input
             row.dd.steam_preasure,
             row.dd.temp_out,
 
-            row.slurry.slurry_line,
-            row.slurry.slurry_process_order,
-            row.slurry.water_correction,
-            row.slurry.water_pct,
+             row.slurry.slurry_process_order,
+             row.slurry.water_correction,
+             row.slurry.water_pct,
 
             row.condensate_temperature_at_DD_outlet,
             row.material_code,
