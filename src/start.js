@@ -22,7 +22,8 @@ async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input
         row.slurry = findNearest(slurry.recordset, row.time)
         row.outSemi = findNearest(outSemi.recordset, row.time)
         row.outTest = findNearest(outTest.recordset, row.time)
-
+if(!row.bigbag||!row.dd||!row.slurry||!row.outSemi||!row.outTest)
+    continue;
         let inputArray = [
             row.bigbag.bigbag_number,
             row.bigbag.sifter_speed_nominal_pct,
@@ -57,7 +58,6 @@ async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input
 
 // connect to your database
 sql.connect(config, async function (err) {
-    const orderId = 1;
     if (err) console.log(err);
 
     // create Request object
@@ -67,16 +67,16 @@ sql.connect(config, async function (err) {
     //     from recipe_0_raw_material_in raw_in
     //     join recipe_0_raw_material_used  raw_used ON raw_used.process_order_sap3 = raw_in.process_order_sap3 AND raw_used.id=raw_in.id
     //     ORDER BY `);
-    let bigbag = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_processing_details_bigbag WHERE orders_details_id = ${orderId} ORDER BY bigbag_filling_time_end`);
-    let dd = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
-    let slurry = await runQuery(`SELECT *, CAST(CONVERT(datetime,slurry_start_time) as float) as time FROM recipe_0_processing_details_slurry WHERE orders_details_id = ${orderId} ORDER BY slurry_start_time`);
-    let outSemi = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${orderId} ORDER BY bigbag_filling_time_end`);
-    let outTest = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_out_test_during_production WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
-
     let input = [];
     let label = [];
     let orders = await runQuery("SELECT TOP 5 * from recipe_0_orders_details WHERE data_split = 'training'");
     for (let order of orders.recordset) {
+        let bigbag = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_processing_details_bigbag WHERE orders_details_id = ${order.id} ORDER BY bigbag_filling_time_end`);
+        let dd = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${order.id} ORDER BY testing_time`);
+        let slurry = await runQuery(`SELECT *, CAST(CONVERT(datetime,slurry_start_time) as float) as time FROM recipe_0_processing_details_slurry WHERE orders_details_id = ${order.id} ORDER BY slurry_start_time`);
+        let outSemi = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${order.id} ORDER BY bigbag_filling_time_end`);
+        let outTest = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_out_test_during_production WHERE orders_details_id = ${order.id} ORDER BY testing_time`);
+
         await fillWithData(order.id, bigbag, dd, slurry, outSemi, outTest, input, label);
     }
     let tensor = convertToTensor(input, label);
@@ -87,6 +87,12 @@ sql.connect(config, async function (err) {
     let inputTest = [];
     let labelTest = [];
     for (let order of ordersTest.recordset) {
+        let bigbag = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_processing_details_bigbag WHERE orders_details_id = ${order.id} ORDER BY bigbag_filling_time_end`);
+        let dd = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${order.id} ORDER BY testing_time`);
+        let slurry = await runQuery(`SELECT *, CAST(CONVERT(datetime,slurry_start_time) as float) as time FROM recipe_0_processing_details_slurry WHERE orders_details_id = ${order.id} ORDER BY slurry_start_time`);
+        let outSemi = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${order.id} ORDER BY bigbag_filling_time_end`);
+        let outTest = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_out_test_during_production WHERE orders_details_id = ${order.id} ORDER BY testing_time`);
+
         await fillWithData(order.id, bigbag, dd, slurry, outSemi, outTest, inputTest, labelTest);
     }
     testModel(model, inputTest, labelTest, tensor);
@@ -198,8 +204,11 @@ function testModel(model, inputs, labels, normalizationData) {
         // Un-normalize the data
         return [preds.dataSync()];
     });
-    console.log(labels, preds)
+    for(let i=0;i<labels.length;i++){
+        if(i%100==0)console.log(labels[i])
+    }
+    console.log(labels[0], preds[0],preds[1],preds[2]);
 
     let error = tf.losses.meanSquaredError(tf.tensor2d(labels, [labels.length, 3]).reshape([labels.length * 3]), preds);
-    console.log(error);
+    console.log(error.dataSync());
 }
