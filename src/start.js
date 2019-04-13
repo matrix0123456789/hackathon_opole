@@ -1,5 +1,5 @@
 var sql = require("mssql");
-const tf =require( "@tensorflow/tfjs-node");
+const tf = require("@tensorflow/tfjs-node");
 
 // config for your database
 var config = {
@@ -10,9 +10,11 @@ var config = {
 };
 
 async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input, label) {
-    let walec = await runQuery(`SELECT TOP 1000  *, CAST(CONVERT(datetime,walec08.timestamp) as float) as time from recipe_0_orders_details
-       JOIN "Walec DD08" walec08 ON walec08.timestamp between recipe_0_orders_details.activation_date  AND recipe_0_orders_details.closing_date
-       where id = ${orderId}`);
+    let walec = await runQuery(`SELECT TOP 1000 *, CAST(CONVERT(datetime, walec08.timestamp) as float) as time
+                                from recipe_0_orders_details
+                                         JOIN "Walec DD08" walec08
+                                              ON walec08.timestamp between recipe_0_orders_details.activation_date AND recipe_0_orders_details.closing_date
+    where id = ${orderId}`);
 
     for (let row of walec.recordset) {
         row.bigbag = findNearest(bigbag.recordset, row.time)
@@ -29,9 +31,9 @@ async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input
             row.dd.steam_preasure,
             row.dd.temp_out,
 
-             row.slurry.slurry_process_order,
-             row.slurry.water_correction,
-             row.slurry.water_pct,
+            row.slurry.slurry_process_order,
+            row.slurry.water_correction,
+            row.slurry.water_pct,
 
             row.condensate_temperature_at_DD_outlet,
             row.material_code,
@@ -134,8 +136,8 @@ function convertToTensor(input, label) {
         const labelMax = labelTensor.max();
         const labelMin = labelTensor.min();
 
-       // const normalizedInputs = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
-       // const normalizedLabels = labelTensor.sub(labelMin).div(labelMax.sub(labelMin));
+        // const normalizedInputs = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
+        // const normalizedLabels = labelTensor.sub(labelMin).div(labelMax.sub(labelMin));
 
         return {
             inputs: inputTensor,
@@ -148,6 +150,7 @@ function convertToTensor(input, label) {
         }
     });
 }
+
 function createModel() {
     // Create a sequential model
     const model = tf.sequential();
@@ -161,6 +164,7 @@ function createModel() {
 
     return model;
 }
+
 async function trainModel(model, inputs, labels) {
     // Prepare the model for training.
     model.compile({
@@ -196,6 +200,6 @@ function testModel(model, inputs, labels, normalizationData) {
     });
     console.log(labels, preds)
 
-    let error = tf.losses.meanSquaredError(tf.tensor2d(labels, [labels.length , 3]).reshape([labels.length*3]), preds);
+    let error = tf.losses.meanSquaredError(tf.tensor2d(labels, [labels.length, 3]).reshape([labels.length * 3]), preds);
     console.log(error);
 }
