@@ -17,18 +17,30 @@ function avg(array, key) {
     return sum / array.length;
 }
 
+function min(array, key) {
+    let min = null;
+    for (let x of array) {
+        if (+x[key] < min || min === null)
+            min = +x[key];
+    }
+    return min;
+}
+
 async function fillWithData(orderId, input, label) {
     let dd = await runQuery(`SELECT *, testing_time as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
     let slurry = await runQuery(`SELECT *, slurry_start_time as time FROM recipe_0_processing_details_slurry WHERE orders_details_id = ${orderId} ORDER BY slurry_start_time`);
     let outTest = await runQuery(`SELECT *, testing_time as time FROM recipe_0_out_test_during_production WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
     // let outSemi = await runQuery(`SELECT *, bigbag_filling_time_end as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
 
-    let main = await runQuery(`SELECT finished.bigbag_filling_duration, finished.bigbag_filling_time_end, bigbag.sifter_speed_nominal_pct, semi.efficiency
+    let main = await runQuery(`SELECT finished.bigbag_filling_duration, finished.bigbag_filling_time_end, bigbag.sifter_speed_nominal_pct, semi.efficiency, avg(fat_pct) as fat_pct, avg(particles_grp1) as particles_grp1, avg(particles_grp2) as particles_grp2, avg(particles_grp3) as particles_grp3,avg(moisture) as moisture
                                 from recipe_0_orders_details order_details
                                     JOIN recipe_0_processing_details_bigbag bigbag ON bigbag.orders_details_id = order_details.id
                                     join recipe_0_out_semi_finished_production semi ON semi.bigbag_number = bigbag.bigbag_number AND semi.orders_details_id = order_details.id
                                     JOIN recipe_0_out_semi_finished_production finished ON finished.orders_details_id=order_details.id AND finished.bigbag_number=bigbag.bigbag_number
-                                 where id = ${orderId}
+                                JOIN recipe_0_raw_material_in raw_in ON raw_in.id = order_details.id
+                                JOIN recipe_0_raw_material_used raw_used ON raw_used.id = order_details.id AND raw_used.process_order_sap3 = raw_in.process_order_sap3
+                                 where order_details.id = ${orderId}
+group by bigbag.orders_details_id, bigbag.bigbag_number, finished.bigbag_filling_duration, finished.bigbag_filling_time_end, bigbag.sifter_speed_nominal_pct, semi.efficiency
    `);
 
     for (let row of main.recordset) {
@@ -44,12 +56,13 @@ async function fillWithData(orderId, input, label) {
         if (row.dd.length == 0 || row.slurry.length == 0 || row.outTest.length == 0)
             continue;
         let inputArray = [
+            row.fat_pct, row.particles_grp1, row.particles_grp2, row.particles_grp3, row.moisture,
             row.walec.a, row.walec.b, row.walec.c, row.walec.d, row.walec.e, row.walec.f, row.walec.g, row.walec.h, row.walec.i, row.walec.j,
             row.sifter_speed_nominal_pct,
-            avg(row.dd, 'steam_preasure'), avg(row.dd, 'dd_speed'), avg(row.dd, 'temp_out'),
-            avg(row.slurry, 'water_pct'), avg(row.slurry, 'water_correction'),
+            min(row.dd, 'steam_preasure'), min(row.dd, 'dd_speed'), min(row.dd, 'temp_out'),
+            min(row.slurry, 'water_pct'), min(row.slurry, 'water_correction'),
         ];
-        let outputArray = [row.efficiency, avg(row.outTest, 'moisture'), avg(row.outTest, 'bulk_density')]
+        let outputArray = [row.efficiency, min(row.outTest, 'moisture'), min(row.outTest, 'bulk_density')]
         input.push(inputArray);
         label.push(outputArray);
     }
@@ -93,7 +106,8 @@ sql.connect(config, async function (err) {
     for (let order of ordersTest.recordset) {
         await fillWithData(order.id, inputTest, labelTest);
     }
-    testModel(model, inputTest, labelTest, tensor);
+    testModel(model, input, label, tensor);
+    //testModel(model, inputTest, labelTest, tensor);
     // console.log(tensor);
 });
 
@@ -158,8 +172,8 @@ function convertToTensor(input, label) {
         const normalizedLabels = labelTensor.sub(labelMinSafe).div(labelMaxSafe.sub(labelMinSafe));
 
         return {
-            inputs: inputTensor,
-            labels: labelTensor,
+            inputs: normalizedInputs,
+            labels: normalizedLabels,
             // Return the min/max bounds so we can use them later.
             inputMax: inputMaxSafe,
             inputMin: inputMinSafe,
@@ -173,12 +187,10 @@ function createModel() {
     // Create a sequential model
     const model = tf.sequential();
 
-    model.add(tf.layers.dense({inputShape: [16], units: 16, useBias: true}));
+    model.add(tf.layers.dense({inputShape: [21], units: 21, useBias: true}));
 
-    model.add(tf.layers.dense({units: 120, useBias: true}));
-    model.add(tf.layers.dense({units: 50, useBias: true}));
-    model.add(tf.layers.dense({units: 30, useBias: true}));
-
+    model.add(tf.layers.dense({units: 21, useBias: true}));
+    model.add(tf.layers.dense({units: 20, useBias: true}));
     model.add(tf.layers.dense({units: 3, useBias: true}));
 
     return model;
@@ -187,18 +199,18 @@ function createModel() {
 async function trainModel(model, inputs, labels) {
     // Prepare the model for training.
     model.compile({
-        optimizer: tf.train.adam(0.001),
+        optimizer: tf.train.adam(0.00001),
         loss: tf.losses.meanSquaredError,
         metrics: ['mse'],
     });
 
-    const batchSize = 32;
-    const epochs = 100;
+    const batchSize = 1;
+    const epochs = 10;
 
     return await model.fit(inputs, labels, {
         batchSize,
         epochs,
-        shuffle: true,
+        shuffle: false,
         callbacks: console.log
     });
 }
@@ -226,25 +238,29 @@ function testModel(model, inputs, labels, normalizationData) {
     }
     console.log(labels, predsGrouped)
 
-    var a=labels.map(x=>{
-        if(x[0]<98)
+    var a = labels.map(x => {
+        if (x[0] < 98)
             return 'below';
-        else if(x[0]<=110)
+        else if (x[0] <= 110)
             return 'optimal';
         else
             return 'above'
     })
-    var b=predsGrouped.map(x=>{
-        if(x[0]<98)
+    var b = predsGrouped.map(x => {
+        if (x[0] < 98)
             return 'below';
-        else if(x[0]<=110)
+        else if (x[0] <= 110)
             return 'optimal';
         else
             return 'above'
     })
     const fs = require('fs');
-    fs.writeFile("./a.json", JSON.stringify(a), ()=>{});
-    fs.writeFile("./b.json", JSON.stringify(b), ()=>{});
-    fs.writeFile("./oryginal.json", JSON.stringify(labels), ()=>{});
-    fs.writeFile("./preds.json", JSON.stringify(predsGrouped), ()=>{});
+    fs.writeFile("./a.json", JSON.stringify(a), () => {
+    });
+    fs.writeFile("./b.json", JSON.stringify(b), () => {
+    });
+    fs.writeFile("./oryginal.json", JSON.stringify(labels), () => {
+    });
+    fs.writeFile("./preds.json", JSON.stringify(predsGrouped), () => {
+    });
 }
