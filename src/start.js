@@ -10,7 +10,7 @@ var config = {
 };
 
 async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input, label) {
-    let walec = await runQuery(`SELECT TOP 100 *, CAST(CONVERT(datetime, walec08.timestamp) as float) as time
+    let walec = await runQuery(`SELECT *, CAST(CONVERT(datetime, walec08.timestamp) as float) as time
                                 from recipe_0_orders_details
                                          JOIN "Walec DD08" walec08
                                               ON walec08.timestamp between recipe_0_orders_details.activation_date AND recipe_0_orders_details.closing_date
@@ -22,8 +22,8 @@ async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input
         row.slurry = findNearest(slurry.recordset, row.time)
         row.outSemi = findNearest(outSemi.recordset, row.time)
         row.outTest = findNearest(outTest.recordset, row.time)
-if(!row.bigbag||!row.dd||!row.slurry||!row.outSemi||!row.outTest)
-    continue;
+        if (!row.bigbag || !row.dd || !row.slurry || !row.outSemi || !row.outTest)
+            continue;
         let inputArray = [
             row.bigbag.bigbag_number,
             row.bigbag.sifter_speed_nominal_pct,
@@ -139,8 +139,8 @@ function convertToTensor(input, label) {
         const labelMax = labelTensor.max(0);
         const labelMin = labelTensor.min(0);
 
-         const normalizedInputs = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
-         const normalizedLabels = labelTensor.sub(labelMin).div(labelMax.sub(labelMin));
+        const normalizedInputs = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
+        const normalizedLabels = labelTensor.sub(labelMin).div(labelMax.sub(labelMin));
 
         return {
             inputs: inputTensor,
@@ -158,12 +158,11 @@ function createModel() {
     // Create a sequential model
     const model = tf.sequential();
 
-    model.add(tf.layers.dense({inputShape: [12], units: 48, useBias: true}));
+    model.add(tf.layers.dense({inputShape: [12], units: 12, useBias: true}));
 
-    model.add(tf.layers.dense({units: 48, useBias: true}));
-    model.add(tf.layers.dense({units: 24, useBias: true}));
-    model.add(tf.layers.dense({units: 12, useBias: true}));
-    model.add(tf.layers.dense({units: 6, useBias: true}));
+    model.add(tf.layers.dense({units: 120, useBias: true}));
+    model.add(tf.layers.dense({units: 50, useBias: true}));
+    model.add(tf.layers.dense({units: 30, useBias: true}));
 
     model.add(tf.layers.dense({units: 3, useBias: true}));
 
@@ -173,13 +172,13 @@ function createModel() {
 async function trainModel(model, inputs, labels) {
     // Prepare the model for training.
     model.compile({
-        optimizer: tf.train.adam(0.01),
+        optimizer: tf.train.adam(0.00001),
         loss: tf.losses.meanSquaredError,
         metrics: ['mse'],
     });
 
-    const batchSize = 512;
-    const epochs = 100;
+    const batchSize = 128;
+    const epochs = 10;
 
     return await model.fit(inputs, labels, {
         batchSize,
@@ -205,10 +204,54 @@ function testModel(model, inputs, labels, normalizationData) {
         // Un-normalize the data
         return [unNormPreds.dataSync()];
     });
-    console.log(labels[0], preds[0],preds[1],preds[2]);
-    console.log(labels[2000], preds[6000],preds[6001],preds[6002]);
-    console.log(labels[3000], preds[9000],preds[9001],preds[9002]);
+    console.log(labels[0], preds[0], preds[1], preds[2]);
+    console.log(labels[200], preds[600], preds[601], preds[602]);
+    console.log(labels[300], preds[900], preds[901], preds[902]);
 
-    let error = tf.losses.meanSquaredError(tf.tensor2d(labels, [labels.length, 3]).reshape([labels.length * 3]), preds);
-    console.log(error.dataSync());
+    let reshapedInput = tf.tensor2d(labels, [labels.length, 3]).reshape([labels.length * 3]);
+    let rootMeanSquaredError = Math.sqrt(tf.losses.meanSquaredError(reshapedInput, preds).dataSync()[0]);
+
+    let reshapedInputArr = reshapedInput.dataSync();
+    let predsArr = preds;
+    var avgSum = [0, 0, 0];
+    for (let i = 0; i < reshapedInputArr.length; i += 3) {
+        avgSum[0] += reshapedInputArr[i]
+        avgSum[1] += reshapedInputArr[i + 1]
+        avgSum[2] += reshapedInputArr[i + 2]
+    }
+    let avg = [avgSum[0] / reshapedInputArr.length, avgSum[1] / reshapedInputArr.length, avgSum[2] / reshapedInputArr.length]
+    let nominator = [0, 0, 0];
+    let denominator = [0, 0, 0];
+    for (let i = 0; i < predsArr.length/3; i++) {
+        for (let j = 0; j < 3; j++) {
+            nominator[j] += Math.pow(reshapedInputArr[i*3+j]- predsArr[i*3+j], 2)
+            denominator[j] += Math.pow(reshapedInputArr[i*3+j] - avg[j], 2)
+        }
+    }
+    let rSquared = [nominator[0] / denominator[0], nominator[1] / denominator[1], nominator[2] / denominator[2]]
+    let rSquaredValue = (rSquared[0] + rSquared[1] + rSquared[2]) / 3
+    let efciencyEnum = {below: 1, optimal: 2, above: 3}
+
+    let efficiencyInput = [];
+    let efficiencyPreds = [];
+    for (let x of reshapedInputArr) {
+        if (x[0] < 98)
+            efficiencyInput.push(efciencyEnum.below)
+        else if (x[0] <= 110)
+            efficiencyInput.push(efciencyEnum.optimal)
+        else
+            efficiencyInput.push(efciencyEnum.above)
+    }
+    for (let x of predsArr) {
+        if (x[0] < 98)
+            efficiencyPreds.push(efciencyEnum.below)
+        else if (x[0] <= 110)
+            efficiencyPreds.push(efciencyEnum.optimal)
+        else
+            efficiencyPreds.push(efciencyEnum.above)
+    }
+    console.log(tf.tensor1d(efficiencyInput), tf.tensor1d(efficiencyPreds));
+    let accuracy = tf.metrics.categoricalAccuracy(tf.tensor1d(efficiencyInput), tf.tensor1d(efficiencyPreds)).dataSync()[0];
+
+    console.log({rootMeanSquaredError, rSquaredValue, accuracy});
 }
