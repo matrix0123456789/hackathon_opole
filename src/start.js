@@ -1,5 +1,5 @@
 var sql = require("mssql");
-const tf =require( "@tensorflow/tfjs");
+const tf =require( "@tensorflow/tfjs-node");
 
 // config for your database
 var config = {
@@ -61,7 +61,7 @@ let tensor=convertToTensor(input, label);
         await fillWithData(order.id, bigbag, dd, slurry, outSemi, outTest, inputTest, labelTest);
     }
     testModel(model, inputTest, labelTest, tensor);
-   console.log(tensor);
+  // console.log(tensor);
 });
 
 
@@ -125,7 +125,8 @@ function createModel() {
 
     model.add(tf.layers.dense({inputShape: [2], units: 2, useBias: true}));
 
-    model.add(tf.layers.dense({units: 6, useBias: true}));
+    model.add(tf.layers.dense({units: 8, useBias: true}));
+    model.add(tf.layers.dense({units: 8, useBias: true}));
 
     model.add(tf.layers.dense({units: 3, useBias: true}));
 
@@ -139,8 +140,8 @@ async function trainModel(model, inputs, labels) {
         metrics: ['mse'],
     });
 
-    const batchSize = 28;
-    const epochs = 2;
+    const batchSize = 128;
+    const epochs = 10;
 
     return await model.fit(inputs, labels, {
         batchSize,
