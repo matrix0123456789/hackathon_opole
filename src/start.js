@@ -125,7 +125,7 @@ function avoidZeros(min,max){
             maxArray[i]+=1;
         }
     }
-    return [tf.tensor2d(minArray, [1,minArray.length]),tf.tensor2d(maxArray, [1,maxArray.length])]
+    return [tf.tensor(minArray ),tf.tensor(maxArray)]
 }
 function convertToTensor(input, label) {
     // Wrapping these calculations in a tidy will dispose any
@@ -156,7 +156,7 @@ function convertToTensor(input, label) {
             labels: labelTensor,
             // Return the min/max bounds so we can use them later.
             inputMax:inputMaxSafe,
-            inputMin:inputMaxSafe,
+            inputMin:inputMinSafe,
             labelMax:labelMaxSafe,
             labelMin:labelMinSafe,
         }
@@ -205,8 +205,9 @@ function testModel(model, inputs, labels, normalizationData) {
     // that we did earlier.
     const [preds] = tf.tidy(() => {
 
-        const preds = model.predict(tf.tensor2d(inputs, [inputs.length, inputs[0].length]).sub(inputMin).div(inputMax.sub(inputMin)));
-        const unNormPreds = preds
+        const predsTensor = model.predict(tf.tensor2d(inputs, [inputs.length, inputs[0].length]).sub(inputMin).div(inputMax.sub(inputMin)));
+        console.log(predsTensor.dataSync())
+        const unNormPreds = predsTensor
             .mul(labelMax.sub(labelMin))
             .add(labelMin);
 
