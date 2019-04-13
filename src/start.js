@@ -116,7 +116,17 @@ function runQuery(query) {
 
     })
 }
-
+function avoidZeros(min,max){
+    const minArray=min.dataSync();
+    const maxArray=max.dataSync();
+    for(let i=0;i<minArray.length;i++){
+        if(minArray[i]==maxArray[i]){
+            minArray[i]-=1;
+            maxArray[i]+=1;
+        }
+    }
+    return [tf.tensor2d(minArray, [1,minArray.length]),tf.tensor2d(maxArray, [1,maxArray.length])]
+}
 function convertToTensor(input, label) {
     // Wrapping these calculations in a tidy will dispose any
     // intermediate tensors.
@@ -133,20 +143,22 @@ function convertToTensor(input, label) {
         //Step 3. Normalize the data to the range 0 - 1 using min-max scaling
         const inputMax = inputTensor.max(0);
         const inputMin = inputTensor.min(0);
+      const [inputMinSafe, inputMaxSafe]=  avoidZeros(inputMin, inputMax);
         const labelMax = labelTensor.max(0);
         const labelMin = labelTensor.min(0);
+        const [labelMinSafe, labelMaxSafe]=  avoidZeros(labelMax, labelMin);
 
-        const normalizedInputs = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
-        const normalizedLabels = labelTensor.sub(labelMin).div(labelMax.sub(labelMin));
+        const normalizedInputs = inputTensor.sub(inputMinSafe).div(inputMaxSafe.sub(inputMinSafe));
+        const normalizedLabels = labelTensor.sub(labelMinSafe).div(labelMaxSafe.sub(labelMinSafe));
 
         return {
             inputs: inputTensor,
             labels: labelTensor,
             // Return the min/max bounds so we can use them later.
-            inputMax,
-            inputMin,
-            labelMax,
-            labelMin,
+            inputMax:inputMaxSafe,
+            inputMin:inputMaxSafe,
+            labelMax:labelMaxSafe,
+            labelMin:labelMinSafe,
         }
     });
 }
