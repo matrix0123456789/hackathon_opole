@@ -21,78 +21,108 @@ async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input
         row.outSemi = findNearest(outSemi.recordset, row.time)
         row.outTest = findNearest(outTest.recordset, row.time)
 
-        input.push([row.steam_pressure_at_the_inlet_of_regulation_unit, row.product_temperature_at_the_outlet_of_JetCooker]);
-        label.push([row.outSemi.efficiency, row.outTest.moisture, row.outTest.bulk_density]);
+        let inputArray = [
+            row.bigbag.bigbag_number,
+            row.bigbag.sifter_speed_nominal_pct,
+
+            row.dd.dd_speed,
+            row.dd.steam_preasure,
+            row.dd.temp_out,
+
+            row.slurry.slurry_line,
+            row.slurry.slurry_process_order,
+            row.slurry.water_correction,
+            row.slurry.water_pct,
+
+            row.condensate_temperature_at_DD_outlet,
+            row.material_code,
+            row.process_order_sap,
+            // row.product_at_the_outlet_of_JetCooker,
+            row.product_temperature_at_the_inlet,
+            // row.product_temperature_at_the_outlet_of_product,
+            row.recipe,
+            row.setpoint_of_product_temperature,
+            row.setpoint_of_steam_pressure_at_the_DD_inlet,
+
+            row.steam_pressure_at_the_inlet_of_regulation_unit,
+            row.product_temperature_at_the_outlet_of_JetCooker,
+        ];
+        let outputArray = [row.outSemi.efficiency, row.outTest.moisture, row.outTest.bulk_density];
+
+        input.push(inputArray);
+        label.push(outputArray);
     }
 }
 
 // connect to your database
 sql.connect(config, async function (err) {
-const orderId=1;
+    const orderId = 1;
     if (err) console.log(err);
 
     // create Request object
 
 
-   // let raw_material = await runQuery(`select *
-   //     from recipe_0_raw_material_in raw_in
-   //     join recipe_0_raw_material_used  raw_used ON raw_used.process_order_sap3 = raw_in.process_order_sap3 AND raw_used.id=raw_in.id
-   //     ORDER BY `);
-    let bigbag=await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_processing_details_bigbag WHERE orders_details_id = ${orderId} ORDER BY bigbag_filling_time_end`);
-    let dd=await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
-    let slurry=await runQuery(`SELECT *, CAST(CONVERT(datetime,slurry_start_time) as float) as time FROM recipe_0_processing_details_slurry WHERE orders_details_id = ${orderId} ORDER BY slurry_start_time`);
-    let outSemi=await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${orderId} ORDER BY bigbag_filling_time_end`);
-    let outTest=await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_out_test_during_production WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
+    // let raw_material = await runQuery(`select *
+    //     from recipe_0_raw_material_in raw_in
+    //     join recipe_0_raw_material_used  raw_used ON raw_used.process_order_sap3 = raw_in.process_order_sap3 AND raw_used.id=raw_in.id
+    //     ORDER BY `);
+    let bigbag = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_processing_details_bigbag WHERE orders_details_id = ${orderId} ORDER BY bigbag_filling_time_end`);
+    let dd = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
+    let slurry = await runQuery(`SELECT *, CAST(CONVERT(datetime,slurry_start_time) as float) as time FROM recipe_0_processing_details_slurry WHERE orders_details_id = ${orderId} ORDER BY slurry_start_time`);
+    let outSemi = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${orderId} ORDER BY bigbag_filling_time_end`);
+    let outTest = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_out_test_during_production WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
 
-    let input=[];
-    let label=[];
-    let orders=await runQuery("SELECT TOP 5 * from recipe_0_orders_details WHERE data_split = 'training'");
-    for(let order of orders.recordset) {
+    let input = [];
+    let label = [];
+    let orders = await runQuery("SELECT TOP 5 * from recipe_0_orders_details WHERE data_split = 'training'");
+    for (let order of orders.recordset) {
         await fillWithData(order.id, bigbag, dd, slurry, outSemi, outTest, input, label);
     }
-let tensor=convertToTensor(input, label);
-    let model=createModel();
-   let trainResult= await trainModel(model, tensor.inputs, tensor.labels);
+    let tensor = convertToTensor(input, label);
+    let model = createModel();
+    let trainResult = await trainModel(model, tensor.inputs, tensor.labels);
     console.log('Done Training');
-    let ordersTest=await runQuery("SELECT * from recipe_0_orders_details WHERE data_split = 'test'");
-    let inputTest=[];
-    let labelTest=[];
-    for(let order of ordersTest.recordset) {
+    let ordersTest = await runQuery("SELECT * from recipe_0_orders_details WHERE data_split = 'test'");
+    let inputTest = [];
+    let labelTest = [];
+    for (let order of ordersTest.recordset) {
         await fillWithData(order.id, bigbag, dd, slurry, outSemi, outTest, inputTest, labelTest);
     }
     testModel(model, inputTest, labelTest, tensor);
-  // console.log(tensor);
+    // console.log(tensor);
 });
 
 
-function findNearest(data, value){
-    let result=null;
-    let distance=Number.POSITIVE_INFINITY;
-    for(let x of data ){
-        if(Math.abs(x.time - value)<distance){
-            distance=Math.abs(x.time - value);
-        result=x;
+function findNearest(data, value) {
+    let result = null;
+    let distance = Number.POSITIVE_INFINITY;
+    for (let x of data) {
+        if (Math.abs(x.time - value) < distance) {
+            distance = Math.abs(x.time - value);
+            result = x;
         }
     }
     return result;
 }
-function runQuery(query){
-    return new Promise((resolve,reject)=>{
+
+function runQuery(query) {
+    return new Promise((resolve, reject) => {
         var request = new sql.Request();
         request.query(query, function (err, recordset) {
-            if(err) reject(err);
+            if (err) reject(err);
             else resolve(recordset);
         });
 
     })
 }
-function convertToTensor(input,label) {
+
+function convertToTensor(input, label) {
     // Wrapping these calculations in a tidy will dispose any
     // intermediate tensors.
 
     return tf.tidy(() => {
         // Step 1. Shuffle the data
-       // tf.util.shuffle(data);
+        // tf.util.shuffle(data);
 
         // Step 2. Convert data to Tensor
 
