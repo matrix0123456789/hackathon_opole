@@ -11,7 +11,7 @@ var config = {
 function avg(array, key){
     let sum=0;
     for(let x of array){
-        sum+=x[key]
+        sum+=+x[key]
     }
     return sum/array.length;
 }
@@ -38,7 +38,7 @@ async function fillWithData(orderId, input, label) {
         let startString=new Date(start).toISOString()
         let endString=new Date(end).toISOString()
 
-        row.walec=await runQuery(`SELECT AVG(steam_pressure_at_the_inlet_of_regulation_unit) as a, avg(product_temperature_at_the_outlet_of_JetCooker) as b, avg(setpoint_of_steam_pressure_at_the_DD_inlet) as c, avg(condensate_temperature_at_DD_outlet) as d, avg(product_temperature_at_the_inlet) as e, avg(setpoint_of_product_temperature) as f, avg(product_temperature_at_the_outlet_of_JetCooker) as g, avg(steam_pressure_at_the_inlet_of_JetCooker) as h, avg(steam_pressure_at_the_outlet_of_regulation_unit) as i, avg(product_temperature_at_the_outlet_of_product) as j FROM [Walec DD08] as DD08 WHERE timestamp between convert(varchar, '${startString}', 120) AND convert(varchar, '${endString}', 120)`)
+        row.walec=(await runQuery(`SELECT AVG(steam_pressure_at_the_inlet_of_regulation_unit) as a, avg(product_temperature_at_the_outlet_of_JetCooker) as b, avg(setpoint_of_steam_pressure_at_the_DD_inlet) as c, avg(condensate_temperature_at_DD_outlet) as d, avg(product_temperature_at_the_inlet) as e, avg(setpoint_of_product_temperature) as f, avg(product_temperature_at_the_outlet_of_JetCooker) as g, avg(steam_pressure_at_the_inlet_of_JetCooker) as h, avg(steam_pressure_at_the_outlet_of_regulation_unit) as i, avg(product_temperature_at_the_outlet_of_product) as j FROM [Walec DD08] as DD08 WHERE timestamp between convert(varchar, '${startString}', 120) AND convert(varchar, '${endString}', 120)`)).recordset[0]
         if (row.dd.length==0 || row.slurry.length==0 || row.outTest.length==0)
             continue;
         let inputArray = [
@@ -155,7 +155,7 @@ function createModel() {
     // Create a sequential model
     const model = tf.sequential();
 
-    model.add(tf.layers.dense({inputShape: [12], units: 12, useBias: true}));
+    model.add(tf.layers.dense({inputShape: [16], units: 16, useBias: true}));
 
     model.add(tf.layers.dense({units: 120, useBias: true}));
     model.add(tf.layers.dense({units: 50, useBias: true}));
