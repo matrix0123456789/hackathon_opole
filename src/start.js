@@ -1,5 +1,5 @@
 var sql = require("mssql");
-const tf = require("@tensorflow/tfjs-node");
+const tf = require("@tensorflow/tfjs");
 
 // config for your database
 var config = {
@@ -34,16 +34,13 @@ if(!row.bigbag||!row.dd||!row.slurry||!row.outSemi||!row.outTest)
 
             row.slurry.slurry_process_order,
             row.slurry.water_correction,
-            row.slurry.water_pct,
+            //row.slurry.water_pct,//todo pomyśleć
 
             row.condensate_temperature_at_DD_outlet,
-            row.material_code,
-            row.process_order_sap,
             // row.product_at_the_outlet_of_JetCooker,
             row.product_temperature_at_the_inlet,
             // row.product_temperature_at_the_outlet_of_product,
-            row.recipe,
-            row.setpoint_of_product_temperature,
+            //row.setpoint_of_product_temperature,//todo pomyśleć
             row.setpoint_of_steam_pressure_at_the_DD_inlet,
 
             row.steam_pressure_at_the_inlet_of_regulation_unit,
@@ -137,13 +134,13 @@ function convertToTensor(input, label) {
         const labelTensor = tf.tensor2d(label, [label.length, label[0].length]);
 
         //Step 3. Normalize the data to the range 0 - 1 using min-max scaling
-        const inputMax = inputTensor.max();
-        const inputMin = inputTensor.min();
-        const labelMax = labelTensor.max();
-        const labelMin = labelTensor.min();
+        const inputMax = inputTensor.max(0);
+        const inputMin = inputTensor.min(0);
+        const labelMax = labelTensor.max(0);
+        const labelMin = labelTensor.min(0);
 
-        // const normalizedInputs = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
-        // const normalizedLabels = labelTensor.sub(labelMin).div(labelMax.sub(labelMin));
+         const normalizedInputs = inputTensor.sub(inputMin).div(inputMax.sub(inputMin));
+         const normalizedLabels = labelTensor.sub(labelMin).div(labelMax.sub(labelMin));
 
         return {
             inputs: inputTensor,
@@ -161,7 +158,7 @@ function createModel() {
     // Create a sequential model
     const model = tf.sequential();
 
-    model.add(tf.layers.dense({inputShape: [17], units: 17, useBias: true}));
+    model.add(tf.layers.dense({inputShape: [12], units: 12, useBias: true}));
 
     model.add(tf.layers.dense({units: 120, useBias: true}));
     model.add(tf.layers.dense({units: 50, useBias: true}));
@@ -181,7 +178,7 @@ async function trainModel(model, inputs, labels) {
     });
 
     const batchSize = 32;
-    const epochs = 100;
+    const epochs = 1;
 
     return await model.fit(inputs, labels, {
         batchSize,
@@ -199,15 +196,14 @@ function testModel(model, inputs, labels, normalizationData) {
     // that we did earlier.
     const [preds] = tf.tidy(() => {
 
-        const preds = model.predict(tf.tensor2d(inputs, [inputs.length, inputs[0].length]));
-
+        const preds = model.predict(tf.tensor2d(inputs, [inputs.length, inputs[0].length]).sub(inputMin).div(inputMax.sub(inputMin)));
+        const unNormPreds = preds
+            .mul(labelMax.sub(labelMin))
+            .add(labelMin);
 
         // Un-normalize the data
-        return [preds.dataSync()];
+        return [unNormPreds.dataSync()];
     });
-    for(let i=0;i<labels.length;i++){
-        if(i%100==0)console.log(labels[i])
-    }
     console.log(labels[0], preds[0],preds[1],preds[2]);
 
     let error = tf.losses.meanSquaredError(tf.tensor2d(labels, [labels.length, 3]).reshape([labels.length * 3]), preds);
