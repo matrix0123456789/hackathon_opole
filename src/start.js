@@ -150,26 +150,23 @@ async function trainModel(model, inputs, labels) {
         callbacks: console.log
     });
 }
+
 function testModel(model, inputs, labels, normalizationData) {
     const {inputMax, inputMin, labelMin, labelMax} = normalizationData;
 
     // Generate predictions for a uniform range of numbers between 0 and 1;
     // We un-normalize the data by doing the inverse of the min-max scaling
     // that we did earlier.
-    const [ preds] = tf.tidy(() => {
+    const [preds] = tf.tidy(() => {
 
-        const preds = model.predict(tf.tensor2d(inputs[0],[1,2]));
+        const preds = model.predict(tf.tensor2d(inputs, [inputs.length, inputs[0].length]));
 
 
         // Un-normalize the data
-        return [ preds.dataSync()];
+        return [preds.dataSync()];
     });
+    console.log(labels, preds)
 
-
-console.log(inputs[0],labels[0], preds);
-
-
-
-
-
+    let error = tf.losses.meanSquaredError(tf.tensor2d(labels, [labels.length , 3]).reshape([labels.length*3]), preds);
+    console.log(error);
 }
