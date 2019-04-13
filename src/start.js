@@ -152,10 +152,10 @@ function createModel() {
     // Create a sequential model
     const model = tf.sequential();
 
-    model.add(tf.layers.dense({inputShape: [2], units: 2, useBias: true}));
+    model.add(tf.layers.dense({inputShape: [17], units: 17, useBias: true}));
 
-    model.add(tf.layers.dense({units: 8, useBias: true}));
-    model.add(tf.layers.dense({units: 8, useBias: true}));
+    model.add(tf.layers.dense({units: 30, useBias: true}));
+    model.add(tf.layers.dense({units: 30, useBias: true}));
 
     model.add(tf.layers.dense({units: 3, useBias: true}));
 
