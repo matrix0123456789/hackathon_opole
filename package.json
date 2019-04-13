@@ -4,7 +4,7 @@
   "main": "index.js",
   "license": "MIT",
   "dependencies": {
-    "@tensorflow/tfjs": "^1.0.4",
+    "@tensorflow/tfjs-node": "*",
     "mssql": "^5.0.5"
   }
 }
