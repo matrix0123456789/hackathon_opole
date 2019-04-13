@@ -1,5 +1,5 @@
 var sql = require("mssql");
-const tf = require("@tensorflow/tfjs");
+const tf = require("@tensorflow/tfjs-node");
 
 // config for your database
 var config = {
@@ -10,7 +10,7 @@ var config = {
 };
 
 async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input, label) {
-    let walec = await runQuery(`SELECT TOP 1000 *, CAST(CONVERT(datetime, walec08.timestamp) as float) as time
+    let walec = await runQuery(`SELECT TOP 100 *, CAST(CONVERT(datetime, walec08.timestamp) as float) as time
                                 from recipe_0_orders_details
                                          JOIN "Walec DD08" walec08
                                               ON walec08.timestamp between recipe_0_orders_details.activation_date AND recipe_0_orders_details.closing_date
@@ -66,7 +66,7 @@ sql.connect(config, async function (err) {
     //     ORDER BY `);
     let input = [];
     let label = [];
-    let orders = await runQuery("SELECT TOP 5 * from recipe_0_orders_details WHERE data_split = 'training'");
+    let orders = await runQuery("SELECT * from recipe_0_orders_details WHERE data_split = 'training'");
     for (let order of orders.recordset) {
         let bigbag = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_processing_details_bigbag WHERE orders_details_id = ${order.id} ORDER BY bigbag_filling_time_end`);
         let dd = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${order.id} ORDER BY testing_time`);
@@ -158,11 +158,12 @@ function createModel() {
     // Create a sequential model
     const model = tf.sequential();
 
-    model.add(tf.layers.dense({inputShape: [12], units: 12, useBias: true}));
+    model.add(tf.layers.dense({inputShape: [12], units: 48, useBias: true}));
 
-    model.add(tf.layers.dense({units: 120, useBias: true}));
-    model.add(tf.layers.dense({units: 50, useBias: true}));
-    model.add(tf.layers.dense({units: 30, useBias: true}));
+    model.add(tf.layers.dense({units: 48, useBias: true}));
+    model.add(tf.layers.dense({units: 24, useBias: true}));
+    model.add(tf.layers.dense({units: 12, useBias: true}));
+    model.add(tf.layers.dense({units: 6, useBias: true}));
 
     model.add(tf.layers.dense({units: 3, useBias: true}));
 
@@ -172,13 +173,13 @@ function createModel() {
 async function trainModel(model, inputs, labels) {
     // Prepare the model for training.
     model.compile({
-        optimizer: tf.train.adam(0.000001),
+        optimizer: tf.train.adam(0.01),
         loss: tf.losses.meanSquaredError,
         metrics: ['mse'],
     });
 
-    const batchSize = 32;
-    const epochs = 1;
+    const batchSize = 512;
+    const epochs = 100;
 
     return await model.fit(inputs, labels, {
         batchSize,
@@ -205,6 +206,8 @@ function testModel(model, inputs, labels, normalizationData) {
         return [unNormPreds.dataSync()];
     });
     console.log(labels[0], preds[0],preds[1],preds[2]);
+    console.log(labels[2000], preds[6000],preds[6001],preds[6002]);
+    console.log(labels[3000], preds[9000],preds[9001],preds[9002]);
 
     let error = tf.losses.meanSquaredError(tf.tensor2d(labels, [labels.length, 3]).reshape([labels.length * 3]), preds);
     console.log(error.dataSync());
