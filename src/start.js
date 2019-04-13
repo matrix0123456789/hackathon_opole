@@ -1,5 +1,5 @@
 var sql = require("mssql");
-const tf = require("@tensorflow/tfjs-node");
+const tf = require("@tensorflow/tfjs");
 
 // config for your database
 var config = {
@@ -8,51 +8,59 @@ var config = {
     server: '192.168.250.3',
     database: 'hackathon_danone'
 };
+function avg(array, key){
+    let sum=0;
+    for(let x of array){
+        sum+=x[key]
+    }
+    return sum/array.length;
+}
+async function fillWithData(orderId, input, label) {
+    let dd = await runQuery(`SELECT *, testing_time as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
+    let slurry = await runQuery(`SELECT *, slurry_start_time as time FROM recipe_0_processing_details_slurry WHERE orders_details_id = ${orderId} ORDER BY slurry_start_time`);
+    let outTest = await runQuery(`SELECT *, testing_time as time FROM recipe_0_out_test_during_production WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
+   // let outSemi = await runQuery(`SELECT *, bigbag_filling_time_end as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
 
-async function fillWithData(orderId, bigbag, dd, slurry, outSemi, outTest, input, label) {
-    let walec = await runQuery(`SELECT *, CAST(CONVERT(datetime, walec08.timestamp) as float) as time
-                                from recipe_0_orders_details
-                                         JOIN "Walec DD08" walec08
-                                              ON walec08.timestamp between recipe_0_orders_details.activation_date AND recipe_0_orders_details.closing_date
-    where id = ${orderId}`);
+    let main = await runQuery(`SELECT finished.bigbag_filling_duration, finished.bigbag_filling_time_end, bigbag.sifter_speed_nominal_pct, semi.efficiency
+                                from recipe_0_orders_details order_details
+                                    JOIN recipe_0_processing_details_bigbag bigbag ON bigbag.orders_details_id = order_details.id
+                                    join recipe_0_out_semi_finished_production semi ON semi.bigbag_number = bigbag.bigbag_number AND semi.orders_details_id = order_details.id
+                                    JOIN recipe_0_out_semi_finished_production finished ON finished.orders_details_id=order_details.id AND finished.bigbag_number=bigbag.bigbag_number
+                                 where id = ${orderId}
+   `);
 
-    for (let row of walec.recordset) {
-        row.bigbag = findNearest(bigbag.recordset, row.time)
-        row.dd = findNearest(dd.recordset, row.time)
-        row.slurry = findNearest(slurry.recordset, row.time)
-        row.outSemi = findNearest(outSemi.recordset, row.time)
-        row.outTest = findNearest(outTest.recordset, row.time)
-        if (!row.bigbag || !row.dd || !row.slurry || !row.outSemi || !row.outTest)
+    for (let row of main.recordset) {
+        let start=row.bigbag_filling_time_end - row.bigbag_filling_duration*60000;
+        let end=row.bigbag_filling_time_end;
+        row.dd = aggregateData(dd.recordset, start,end)
+        row.slurry = aggregateData(slurry.recordset, start,end)
+        row.outTest = aggregateData(outTest.recordset, start,end)
+        let startString=new Date(start).toISOString()
+        let endString=new Date(end).toISOString()
+
+        row.walec=await runQuery(`SELECT AVG(steam_pressure_at_the_inlet_of_regulation_unit) as a, avg(product_temperature_at_the_outlet_of_JetCooker) as b, avg(setpoint_of_steam_pressure_at_the_DD_inlet) as c, avg(condensate_temperature_at_DD_outlet) as d, avg(product_temperature_at_the_inlet) as e, avg(setpoint_of_product_temperature) as f, avg(product_temperature_at_the_outlet_of_JetCooker) as g, avg(steam_pressure_at_the_inlet_of_JetCooker) as h, avg(steam_pressure_at_the_outlet_of_regulation_unit) as i, avg(product_temperature_at_the_outlet_of_product) as j FROM [Walec DD08] as DD08 WHERE timestamp between convert(varchar, '${startString}', 120) AND convert(varchar, '${endString}', 120)`)
+        if (row.dd.length==0 || row.slurry.length==0 || row.outTest.length==0)
             continue;
         let inputArray = [
-            row.bigbag.bigbag_number,
-            row.bigbag.sifter_speed_nominal_pct,
-
-            row.dd.dd_speed,
-            row.dd.steam_preasure,
-            row.dd.temp_out,
-
-            row.slurry.slurry_process_order,
-            row.slurry.water_correction,
-            //row.slurry.water_pct,//todo pomyśleć
-
-            row.condensate_temperature_at_DD_outlet,
-            // row.product_at_the_outlet_of_JetCooker,
-            row.product_temperature_at_the_inlet,
-            // row.product_temperature_at_the_outlet_of_product,
-            //row.setpoint_of_product_temperature,//todo pomyśleć
-            row.setpoint_of_steam_pressure_at_the_DD_inlet,
-
-            row.steam_pressure_at_the_inlet_of_regulation_unit,
-            row.product_temperature_at_the_outlet_of_JetCooker,
+         row.walec.a, row.walec.b, row.walec.c, row.walec.d, row.walec.e, row.walec.f, row.walec.g, row.walec.h, row.walec.i, row.walec.j,
+            row.sifter_speed_nominal_pct,
+            avg(row.dd, 'steam_preasure'), avg(row.dd, 'dd_speed'), avg(row.dd, 'temp_out'),
+            avg(row.slurry, 'water_pct'), avg(row.slurry, 'water_correction'),
         ];
-        let outputArray = [row.outSemi.efficiency, row.outTest.moisture, row.outTest.bulk_density];
-
+        let outputArray = [row.efficiency, avg(row.outTest,'moisture'),  avg(row.outTest,'bulk_density')]
         input.push(inputArray);
         label.push(outputArray);
     }
 }
-
+function aggregateData(data, start,end){
+    let founded=[];
+    for(let item of data){
+        if(item.time >=start && item.time <=end){
+            founded.push(item);
+        }
+    }
+    return founded;
+}
 // connect to your database
 sql.connect(config, async function (err) {
     if (err) console.log(err);
@@ -68,13 +76,8 @@ sql.connect(config, async function (err) {
     let label = [];
     let orders = await runQuery("SELECT * from recipe_0_orders_details WHERE data_split = 'training'");
     for (let order of orders.recordset) {
-        let bigbag = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_processing_details_bigbag WHERE orders_details_id = ${order.id} ORDER BY bigbag_filling_time_end`);
-        let dd = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${order.id} ORDER BY testing_time`);
-        let slurry = await runQuery(`SELECT *, CAST(CONVERT(datetime,slurry_start_time) as float) as time FROM recipe_0_processing_details_slurry WHERE orders_details_id = ${order.id} ORDER BY slurry_start_time`);
-        let outSemi = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${order.id} ORDER BY bigbag_filling_time_end`);
-        let outTest = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_out_test_during_production WHERE orders_details_id = ${order.id} ORDER BY testing_time`);
 
-        await fillWithData(order.id, bigbag, dd, slurry, outSemi, outTest, input, label);
+        await fillWithData(order.id, input, label);
     }
     let tensor = convertToTensor(input, label);
     let model = createModel();
@@ -84,13 +87,7 @@ sql.connect(config, async function (err) {
     let inputTest = [];
     let labelTest = [];
     for (let order of ordersTest.recordset) {
-        let bigbag = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_processing_details_bigbag WHERE orders_details_id = ${order.id} ORDER BY bigbag_filling_time_end`);
-        let dd = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${order.id} ORDER BY testing_time`);
-        let slurry = await runQuery(`SELECT *, CAST(CONVERT(datetime,slurry_start_time) as float) as time FROM recipe_0_processing_details_slurry WHERE orders_details_id = ${order.id} ORDER BY slurry_start_time`);
-        let outSemi = await runQuery(`SELECT *, CAST(CONVERT(datetime,bigbag_filling_time_end) as float) as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${order.id} ORDER BY bigbag_filling_time_end`);
-        let outTest = await runQuery(`SELECT *, CAST(CONVERT(datetime,testing_time) as float) as time FROM recipe_0_out_test_during_production WHERE orders_details_id = ${order.id} ORDER BY testing_time`);
-
-        await fillWithData(order.id, bigbag, dd, slurry, outSemi, outTest, inputTest, labelTest);
+               await fillWithData(order.id, dd, slurry, outSemi, outTest, inputTest, labelTest);
     }
     testModel(model, inputTest, labelTest, tensor);
     // console.log(tensor);
@@ -101,7 +98,7 @@ function findNearest(data, value) {
     let result = null;
     let distance = Number.POSITIVE_INFINITY;
     for (let x of data) {
-        if (Math.abs(x.time - value) < distance) {
+        if ((x.time - value) < distance) {
             distance = Math.abs(x.time - value);
             result = x;
         }
@@ -202,56 +199,10 @@ function testModel(model, inputs, labels, normalizationData) {
             .add(labelMin);
 
         // Un-normalize the data
-        return [unNormPreds.dataSync()];
+        return [unNormPreds.reshape([inputs.length, 3]).dataSync()];
     });
-    console.log(labels[0], preds[0], preds[1], preds[2]);
-    console.log(labels[200], preds[600], preds[601], preds[602]);
-    console.log(labels[300], preds[900], preds[901], preds[902]);
 
-    let reshapedInput = tf.tensor2d(labels, [labels.length, 3]).reshape([labels.length * 3]);
-    let rootMeanSquaredError = Math.sqrt(tf.losses.meanSquaredError(reshapedInput, preds).dataSync()[0]);
+    console.log(labels, preds)
 
-    let reshapedInputArr = reshapedInput.dataSync();
-    let predsArr = preds;
-    var avgSum = [0, 0, 0];
-    for (let i = 0; i < reshapedInputArr.length; i += 3) {
-        avgSum[0] += reshapedInputArr[i]
-        avgSum[1] += reshapedInputArr[i + 1]
-        avgSum[2] += reshapedInputArr[i + 2]
-    }
-    let avg = [avgSum[0] / reshapedInputArr.length, avgSum[1] / reshapedInputArr.length, avgSum[2] / reshapedInputArr.length]
-    let nominator = [0, 0, 0];
-    let denominator = [0, 0, 0];
-    for (let i = 0; i < predsArr.length/3; i++) {
-        for (let j = 0; j < 3; j++) {
-            nominator[j] += Math.pow(reshapedInputArr[i*3+j]- predsArr[i*3+j], 2)
-            denominator[j] += Math.pow(reshapedInputArr[i*3+j] - avg[j], 2)
-        }
-    }
-    let rSquared = [nominator[0] / denominator[0], nominator[1] / denominator[1], nominator[2] / denominator[2]]
-    let rSquaredValue = (rSquared[0] + rSquared[1] + rSquared[2]) / 3
-    let efciencyEnum = {below: 1, optimal: 2, above: 3}
 
-    let efficiencyInput = [];
-    let efficiencyPreds = [];
-    for (let x of reshapedInputArr) {
-        if (x[0] < 98)
-            efficiencyInput.push(efciencyEnum.below)
-        else if (x[0] <= 110)
-            efficiencyInput.push(efciencyEnum.optimal)
-        else
-            efficiencyInput.push(efciencyEnum.above)
-    }
-    for (let x of predsArr) {
-        if (x[0] < 98)
-            efficiencyPreds.push(efciencyEnum.below)
-        else if (x[0] <= 110)
-            efficiencyPreds.push(efciencyEnum.optimal)
-        else
-            efficiencyPreds.push(efciencyEnum.above)
-    }
-    console.log(tf.tensor1d(efficiencyInput), tf.tensor1d(efficiencyPreds));
-    let accuracy = tf.metrics.categoricalAccuracy(tf.tensor1d(efficiencyInput), tf.tensor1d(efficiencyPreds)).dataSync()[0];
-
-    console.log({rootMeanSquaredError, rSquaredValue, accuracy});
 }
