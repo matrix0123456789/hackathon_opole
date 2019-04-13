@@ -1,5 +1,5 @@
 var sql = require("mssql");
-const tf = require("@tensorflow/tfjs");
+const tf = require("@tensorflow/tfjs-node");
 
 // config for your database
 var config = {
@@ -8,18 +8,20 @@ var config = {
     server: '192.168.250.3',
     database: 'hackathon_danone'
 };
-function avg(array, key){
-    let sum=0;
-    for(let x of array){
-        sum+=+x[key]
+
+function avg(array, key) {
+    let sum = 0;
+    for (let x of array) {
+        sum += +x[key]
     }
-    return sum/array.length;
+    return sum / array.length;
 }
+
 async function fillWithData(orderId, input, label) {
     let dd = await runQuery(`SELECT *, testing_time as time FROM recipe_0_processing_details_dd WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
     let slurry = await runQuery(`SELECT *, slurry_start_time as time FROM recipe_0_processing_details_slurry WHERE orders_details_id = ${orderId} ORDER BY slurry_start_time`);
     let outTest = await runQuery(`SELECT *, testing_time as time FROM recipe_0_out_test_during_production WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
-   // let outSemi = await runQuery(`SELECT *, bigbag_filling_time_end as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
+    // let outSemi = await runQuery(`SELECT *, bigbag_filling_time_end as time FROM recipe_0_out_semi_finished_production WHERE orders_details_id = ${orderId} ORDER BY testing_time`);
 
     let main = await runQuery(`SELECT finished.bigbag_filling_duration, finished.bigbag_filling_time_end, bigbag.sifter_speed_nominal_pct, semi.efficiency
                                 from recipe_0_orders_details order_details
@@ -30,37 +32,39 @@ async function fillWithData(orderId, input, label) {
    `);
 
     for (let row of main.recordset) {
-        let start=row.bigbag_filling_time_end - row.bigbag_filling_duration*60000;
-        let end=row.bigbag_filling_time_end;
-        row.dd = aggregateData(dd.recordset, start,end)
-        row.slurry = aggregateData(slurry.recordset, start,end)
-        row.outTest = aggregateData(outTest.recordset, start,end)
-        let startString=new Date(start).toISOString()
-        let endString=new Date(end).toISOString()
+        let start = row.bigbag_filling_time_end - row.bigbag_filling_duration * 60000;
+        let end = row.bigbag_filling_time_end;
+        row.dd = aggregateData(dd.recordset, start, end)
+        row.slurry = aggregateData(slurry.recordset, start, end)
+        row.outTest = aggregateData(outTest.recordset, start, end)
+        let startString = new Date(start).toISOString()
+        let endString = new Date(end).toISOString()
 
-        row.walec=(await runQuery(`SELECT AVG(steam_pressure_at_the_inlet_of_regulation_unit) as a, avg(product_temperature_at_the_outlet_of_JetCooker) as b, avg(setpoint_of_steam_pressure_at_the_DD_inlet) as c, avg(condensate_temperature_at_DD_outlet) as d, avg(product_temperature_at_the_inlet) as e, avg(setpoint_of_product_temperature) as f, avg(product_temperature_at_the_outlet_of_JetCooker) as g, avg(steam_pressure_at_the_inlet_of_JetCooker) as h, avg(steam_pressure_at_the_outlet_of_regulation_unit) as i, avg(product_temperature_at_the_outlet_of_product) as j FROM [Walec DD08] as DD08 WHERE timestamp between convert(varchar, '${startString}', 120) AND convert(varchar, '${endString}', 120)`)).recordset[0]
-        if (row.dd.length==0 || row.slurry.length==0 || row.outTest.length==0)
+        row.walec = (await runQuery(`SELECT AVG(steam_pressure_at_the_inlet_of_regulation_unit) as a, avg(product_temperature_at_the_outlet_of_JetCooker) as b, avg(setpoint_of_steam_pressure_at_the_DD_inlet) as c, avg(condensate_temperature_at_DD_outlet) as d, avg(product_temperature_at_the_inlet) as e, avg(setpoint_of_product_temperature) as f, avg(product_temperature_at_the_outlet_of_JetCooker) as g, avg(steam_pressure_at_the_inlet_of_JetCooker) as h, avg(steam_pressure_at_the_outlet_of_regulation_unit) as i, avg(product_temperature_at_the_outlet_of_product) as j FROM [Walec DD08] as DD08 WHERE timestamp between convert(varchar, '${startString}', 120) AND convert(varchar, '${endString}', 120)`)).recordset[0]
+        if (row.dd.length == 0 || row.slurry.length == 0 || row.outTest.length == 0)
             continue;
         let inputArray = [
-         row.walec.a, row.walec.b, row.walec.c, row.walec.d, row.walec.e, row.walec.f, row.walec.g, row.walec.h, row.walec.i, row.walec.j,
+            row.walec.a, row.walec.b, row.walec.c, row.walec.d, row.walec.e, row.walec.f, row.walec.g, row.walec.h, row.walec.i, row.walec.j,
             row.sifter_speed_nominal_pct,
             avg(row.dd, 'steam_preasure'), avg(row.dd, 'dd_speed'), avg(row.dd, 'temp_out'),
             avg(row.slurry, 'water_pct'), avg(row.slurry, 'water_correction'),
         ];
-        let outputArray = [row.efficiency, avg(row.outTest,'moisture'),  avg(row.outTest,'bulk_density')]
+        let outputArray = [row.efficiency, avg(row.outTest, 'moisture'), avg(row.outTest, 'bulk_density')]
         input.push(inputArray);
         label.push(outputArray);
     }
 }
-function aggregateData(data, start,end){
-    let founded=[];
-    for(let item of data){
-        if(item.time >=start && item.time <=end){
+
+function aggregateData(data, start, end) {
+    let founded = [];
+    for (let item of data) {
+        if (item.time >= start && item.time <= end) {
             founded.push(item);
         }
     }
     return founded;
 }
+
 // connect to your database
 sql.connect(config, async function (err) {
     if (err) console.log(err);
@@ -87,7 +91,7 @@ sql.connect(config, async function (err) {
     let inputTest = [];
     let labelTest = [];
     for (let order of ordersTest.recordset) {
-               await fillWithData(order.id, inputTest, labelTest);
+        await fillWithData(order.id, inputTest, labelTest);
     }
     testModel(model, inputTest, labelTest, tensor);
     // console.log(tensor);
@@ -116,17 +120,19 @@ function runQuery(query) {
 
     })
 }
-function avoidZeros(min,max){
-    const minArray=min.dataSync();
-    const maxArray=max.dataSync();
-    for(let i=0;i<minArray.length;i++){
-        if(minArray[i]==maxArray[i]){
-            minArray[i]-=1;
-            maxArray[i]+=1;
+
+function avoidZeros(min, max) {
+    const minArray = min.dataSync();
+    const maxArray = max.dataSync();
+    for (let i = 0; i < minArray.length; i++) {
+        if (minArray[i] == maxArray[i]) {
+            minArray[i] -= 1;
+            maxArray[i] += 1;
         }
     }
-    return [tf.tensor(minArray ),tf.tensor(maxArray)]
+    return [tf.tensor(minArray), tf.tensor(maxArray)]
 }
+
 function convertToTensor(input, label) {
     // Wrapping these calculations in a tidy will dispose any
     // intermediate tensors.
@@ -143,10 +149,10 @@ function convertToTensor(input, label) {
         //Step 3. Normalize the data to the range 0 - 1 using min-max scaling
         const inputMax = inputTensor.max(0);
         const inputMin = inputTensor.min(0);
-      const [inputMinSafe, inputMaxSafe]=  avoidZeros(inputMin, inputMax);
+        const [inputMinSafe, inputMaxSafe] = avoidZeros(inputMin, inputMax);
         const labelMax = labelTensor.max(0);
         const labelMin = labelTensor.min(0);
-        const [labelMinSafe, labelMaxSafe]=  avoidZeros(labelMax, labelMin);
+        const [labelMinSafe, labelMaxSafe] = avoidZeros(labelMax, labelMin);
 
         const normalizedInputs = inputTensor.sub(inputMinSafe).div(inputMaxSafe.sub(inputMinSafe));
         const normalizedLabels = labelTensor.sub(labelMinSafe).div(labelMaxSafe.sub(labelMinSafe));
@@ -155,10 +161,10 @@ function convertToTensor(input, label) {
             inputs: inputTensor,
             labels: labelTensor,
             // Return the min/max bounds so we can use them later.
-            inputMax:inputMaxSafe,
-            inputMin:inputMinSafe,
-            labelMax:labelMaxSafe,
-            labelMin:labelMinSafe,
+            inputMax: inputMaxSafe,
+            inputMin: inputMinSafe,
+            labelMax: labelMaxSafe,
+            labelMin: labelMinSafe,
         }
     });
 }
@@ -181,13 +187,13 @@ function createModel() {
 async function trainModel(model, inputs, labels) {
     // Prepare the model for training.
     model.compile({
-        optimizer: tf.train.adam(0.00001),
+        optimizer: tf.train.adam(0.001),
         loss: tf.losses.meanSquaredError,
         metrics: ['mse'],
     });
 
-    const batchSize = 128;
-    const epochs = 10;
+    const batchSize = 32;
+    const epochs = 100;
 
     return await model.fit(inputs, labels, {
         batchSize,
@@ -214,8 +220,13 @@ function testModel(model, inputs, labels, normalizationData) {
         // Un-normalize the data
         return [unNormPreds.reshape([inputs.length, 3]).dataSync()];
     });
-
+    let predsGrouped = [];
+    for (let i = 0; i < preds.length; i += 3) {
+        predsGrouped.push([preds[i], preds[i + 1], preds[i + 2]]);
+    }
     console.log(labels, preds)
 
-
+    const fs = require('fs');
+    fs.writeFile("./oryginal.json", JSON.stringify(labels), ()=>{});
+    fs.writeFile("./preds.json", JSON.stringify(predsGrouped), ()=>{});
 }
