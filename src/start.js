@@ -224,9 +224,27 @@ function testModel(model, inputs, labels, normalizationData) {
     for (let i = 0; i < preds.length; i += 3) {
         predsGrouped.push([preds[i], preds[i + 1], preds[i + 2]]);
     }
-    console.log(labels, preds)
+    console.log(labels, predsGrouped)
 
+    var a=labels.map(x=>{
+        if(x[0]<98)
+            return 'below';
+        else if(x[0]<=110)
+            return 'optimal';
+        else
+            return 'above'
+    })
+    var b=predsGrouped.map(x=>{
+        if(x[0]<98)
+            return 'below';
+        else if(x[0]<=110)
+            return 'optimal';
+        else
+            return 'above'
+    })
     const fs = require('fs');
+    fs.writeFile("./a.json", JSON.stringify(a), ()=>{});
+    fs.writeFile("./b.json", JSON.stringify(b), ()=>{});
     fs.writeFile("./oryginal.json", JSON.stringify(labels), ()=>{});
     fs.writeFile("./preds.json", JSON.stringify(predsGrouped), ()=>{});
 }
